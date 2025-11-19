@@ -1,7 +1,9 @@
 use clap::Parser;
-use std::str::FromStr;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::{collections::HashMap, str::FromStr};
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(version, author, about, long_about = None)]
 pub struct Args {
     /// 配置文件路径
@@ -62,6 +64,130 @@ pub struct Args {
     pub appendfsync: String,
 }
 
+impl Args {
+    pub fn is_master(&self) -> bool {
+        self.replicaof.is_none()
+    }
+
+    pub fn is_slave(&self) -> bool {
+        self.replicaof.is_some()
+    }
+
+    /// 从配置文件中加载配置
+    ///
+    /// 1.首先解析命令行参数
+    /// 2.尝试从配置文件加载配置
+    /// 3.合并配置，命令行参数优先级更高
+    pub fn load() -> Self {
+        let mut args = Args::parse();
+        if let Ok(config_map) = parse_config_file(&args.config) {
+            args.merge_config(config_map);
+        }
+        args
+    }
+
+    /// 合并配置文件中的配置
+    fn merge_config(&mut self, config_map: HashMap<String, String>) {
+        // requirepass
+        if self.requirepass.is_none() {
+            if let Some(pass) = config_map.get("requirepass") {
+                self.requirepass = Some(pass.clone());
+            }
+        }
+
+        // bind
+        if self.bind == "0.0.0.0" {
+            if let Some(bind) = config_map.get("bind") {
+                self.bind = bind.clone();
+            }
+        }
+
+        // dbfilename
+        if self.dbfilename == "data/dump.rdb" {
+            if let Some(dbfilename) = config_map.get("dbfilename") {
+                self.dbfilename = dbfilename.clone();
+            }
+        }
+
+        // dir
+        if self.dir == "./" {
+            if let Some(dir) = config_map.get("dir") {
+                self.dir = dir.clone();
+            }
+        }
+
+        // save - 只有在命令行未设置时才使用配置文件的值
+        if self.save.is_empty() {
+            if let Some(save_rules) = config_map.get("save") {
+                self.save = save_rules
+                    .split_whitespace()
+                    .filter_map(|s| SaveRule::from_str(s).ok())
+                    .collect();
+            }
+        }
+
+        // databases
+        if self.databases == 16 {
+            if let Some(databases) = config_map.get("databases") {
+                if let Ok(db_num) = databases.parse() {
+                    self.databases = db_num;
+                }
+            }
+        }
+
+        // hz
+        if (self.hz - 10.0).abs() < f64::EPSILON {
+            if let Some(hz) = config_map.get("hz") {
+                if let Ok(hz_val) = hz.parse() {
+                    self.hz = hz_val;
+                }
+            }
+        }
+
+        // port
+        if self.port == "6379" {
+            if let Some(port) = config_map.get("port") {
+                self.port = port.clone();
+            }
+        }
+
+        // replicaof
+        if self.replicaof.is_none() {
+            if let Some(replicaof) = config_map.get("replicaof") {
+                self.replicaof = Some(replicaof.clone());
+            }
+        }
+
+        // loglevel
+        if self.loglevel == "info" {
+            if let Some(loglevel) = config_map.get("loglevel") {
+                self.loglevel = loglevel.clone();
+            }
+        }
+
+        // appendonly
+        if self.appendonly == "no" {
+            if let Some(appendonly) = config_map.get("appendonly") {
+                self.appendonly = appendonly.clone();
+            }
+        }
+
+        // appendfilename
+        if self.appendfilename == "data/dump.aof" {
+            if let Some(appendfilename) = config_map.get("appendfilename") {
+                self.appendfilename = appendfilename.clone();
+            }
+        }
+
+        // appendfsync
+        if self.appendfsync == "always" {
+            if let Some(appendfsync) = config_map.get("appendfsync") {
+                self.appendfsync = appendfsync.clone();
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SaveRule {
     pub seconds: u64,
@@ -86,4 +212,43 @@ impl FromStr for SaveRule {
                 .map_err(|e| format!("Invalid changes: {}", e))?,
         })
     }
+}
+
+/// 解析配置文件
+fn parse_config_file(filepath: &str) -> Result<HashMap<String, String>, std::io::Error> {
+    let file = File::open(filepath)?;
+    let reader = BufReader::new(file);
+    let mut config_map = HashMap::new();
+
+    for line in reader.lines() {
+        let line = line?;
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        if let Some((key, value)) = parse_config_line(line) {
+            config_map.insert(key, value);
+        }
+    }
+
+    Ok(config_map)
+}
+
+/// 解析配置中的行
+pub fn parse_config_line(line: &str) -> Option<(String, String)> {
+    // 移除行内注释
+    let line = match line.find('#') {
+        Some(pos) => &line[..pos],
+        None => line,
+    };
+
+    let mut iter = line.splitn(2, |c: char| c.is_whitespace());
+    let key = iter.next()?.trim();
+    let val = iter.next()?.trim();
+
+    if key.is_empty() || val.is_empty() {
+        return None;
+    }
+    return Some((key.into(), val.into()));
 }
