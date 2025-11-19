@@ -2,6 +2,9 @@
 edition = "2024"
 name = "rudis"
 version = "0.1.0"
+authors = ["chenyang"]
 
 [dependencies]
 tokio = {version = "1.47.1", features = ["full"]}
+clap = { version = "4.2.1", features = ["derive"] }
+env_logger = "0.8"
