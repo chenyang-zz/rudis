@@ -1,0 +1,7 @@
+[package]
+edition = "2024"
+name = "rudis"
+version = "0.1.0"
+
+[dependencies]
+tokio = {version = "1.47.1", features = ["full"]}
