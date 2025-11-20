@@ -1,11 +1,18 @@
-use rudis::args::Args;
+use rudis::{args::Args, server::Server};
 use std::{env, sync::Arc};
 
 #[tokio::main]
 async fn main() {
     let args = Arc::new(Args::load());
+
+    unsafe {
+        std::env::set_var("RUST_LOG", &args.loglevel);
+    }
     env_logger::init();
+
     service_into(args.clone());
+    let server = Server::new(args.clone());
+    server.start().await;
 }
 
 fn service_into(args: Arc<Args>) {
