@@ -5,6 +5,7 @@ name = "rudis"
 version = "0.1.0"
 
 [dependencies]
+anyhow = "1.0.59"
 clap = {version = "4.2.1", features = ["derive"]}
 env_logger = "0.8"
 log = "0.4"
